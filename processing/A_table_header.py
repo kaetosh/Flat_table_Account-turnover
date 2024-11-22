@@ -12,7 +12,6 @@ sign_1c_not_upp = 'Счет'
 
 def table_header(df, file_excel):
     
-
     # получаем индекс строки, содержащей target_value (значение)
     index_for_columns = 0
     for i in name_account_balance_movements:
@@ -22,26 +21,28 @@ def table_header(df, file_excel):
             if not indices.empty:
                 index_for_columns = indices[0]
                 break
-      
-    
         
-
     # устанавливаем заголовки
     df.columns = df.iloc[index_for_columns]
+    
     df = df.loc[:, df.columns.notna()]
     
     df = df.drop(df.index[0:(index_for_columns+1)]) # удаляем данные выше строки, содержащей имена столбцов таблицы (наименование отчета, период и т.д.)
+    
     df.dropna(axis=0, how='all', inplace=True) # удаляем пустые строки
     df.dropna(axis=1, how='all', inplace=True)
+    
     print(f'{file_excel} удалены пустые строки')
     # получим наименование первого столбца, в котором находятся наши уровни
-    name_first_column = list(df.columns)[0] # столбец с уровнями мы вставляли слева, значит он первый. Получаем имя первого столбца.
     # переименуем этот столбец
-    df.rename(columns={name_first_column: 'Уровень'}, inplace=True)
+
+    df.columns.values[0] = 'Уровень'
+
     print(f'{file_excel} оставляем только табличные данные, переименовываем шапку таблицы')
-    
+
     sign_1c = sign_1c_not_upp
-    # Находим индексы столбца 'Кред. оборот и Дебет Оборот'
+    
+    # Находим индексы столбцов с оборотамии сальдо
     debit_turnover_index = False
     for i in name_account_balance_movements['debit_turnover']:
         try:
@@ -116,10 +117,12 @@ def table_header(df, file_excel):
                  'Кредит_конец']
     
     # Добавляем префикс 'до' к столбцам до 'КредитОборот'
-    df.columns = [col if idx <= debit_turnover_index else f'{str(col)}_до' if debit_turnover_index < idx < credit_turnover_index else col for idx, col in enumerate(df.columns)]
-        
+    if any(col in df.columns for col in name_account_balance_movements['debit_turnover']):
+        df.columns = [col if idx <= debit_turnover_index else f'{str(col)}_до' if debit_turnover_index < idx < credit_turnover_index else col for idx, col in enumerate(df.columns)]
+
     # Добавляем префикс 'ко' к столбцам после 'КредитОборот'
-    df.columns = [col if (idx < credit_turnover_index or col in name_account_balance_movements['credit_turnover'] + name_account_balance_movements['end_debit_balance'] + name_account_balance_movements['end_credit_balance']) else f'{str(col)}_ко' for idx, col in enumerate(df.columns)]
+    if any(col in df.columns for col in name_account_balance_movements['credit_turnover']):
+        df.columns = [col if (idx < credit_turnover_index or col in name_account_balance_movements['credit_turnover'] + name_account_balance_movements['end_debit_balance'] + name_account_balance_movements['end_credit_balance']) else f'{str(col)}_ко' for idx, col in enumerate(df.columns)]
     
 
     # переименуем первые два столбца
