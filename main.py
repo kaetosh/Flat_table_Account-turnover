@@ -7,9 +7,7 @@ from logger import logger
 
 from preprocessing_openpyxl import preprocessing_file_excel
 from resaving_files import save_as_xlsx_not_alert
-
 from analysis_deviations import revolutions_before_processing, revolutions_after_processing
-
 
 from processing.A_table_header import table_header
 from processing.B_handle_missing_values_in_account import handle_missing_values_in_account
@@ -17,23 +15,22 @@ from processing.C_horizontal_structure import horizontal_structure
 from processing.F_lines_delete import lines_delete
 from processing.G_shiftable_level import shiftable_level
 
-
-save_as_xlsx_not_alert()
-folder_path_converted = os.path.join(folder_path, "ConvertedFiles")
-files = os.listdir(folder_path_converted)
-excel_files = [file for file in files if file.endswith('.xlsx') or file.endswith('.xls')]
-if not excel_files:
-    logger.error(f'Не найдены файлы Excel в папке {folder_path_converted}')
-    print(f'Не найдены файлы Excel в папке {folder_path_converted}')
-    sys.exit()
-
-# Инициализируем пустой словарь, куда мы добавим обработанные таблицы каждой компании, затем объединим эти файлы в один.
-dict_df = {} # для обрабатываемых таблиц
-dict_df_check = {} # для таблиц сверки оборотов до и после обработки
-
-
 def main_process():
-    empty_files = []
+    # Пересохраняем файлы в актуальную версию excel, чтобы изежать ошибку openpyxl
+    # KeyError There  is no item named xl/sharedStrings.xml
+    save_as_xlsx_not_alert()
+    folder_path_converted = os.path.join(folder_path, "ConvertedFiles")
+    files = os.listdir(folder_path_converted)
+    excel_files = [file for file in files if file.endswith('.xlsx') or file.endswith('.xls')]
+    if not excel_files:
+        logger.error(f'Не найдены файлы Excel в папке {folder_path_converted}')
+        print(f'Не найдены файлы Excel в папке {folder_path_converted}')
+        sys.exit()
+
+    # Инициализируем пустой словарь, куда мы добавим обработанные таблицы каждой компании, затем объединим эти файлы в один.
+    dict_df = {} # для обрабатываемых таблиц
+    dict_df_check = {} # для таблиц сверки оборотов до и после обработки
+    empty_files = [] # инициализируем пустой список для добавления пустых файлов excel
 
     for file_excel in excel_files:
         # предварительная обработка с помощью openpyxl (снятие объединения, уровни)
@@ -46,24 +43,39 @@ def main_process():
 
         # устанавливаем шапку таблицы
         result_table_header = table_header(df, file_excel)
+        
+        # признак версии 1С
+        # или Конфигурации "Бухгалтерия предприятия", "1С:ERP Агропромышленный комплекс", "1С:ERP Управление предприятием 2"
+        # или Конфигурация "Управление производственным предприятием",
         sign_1c = result_table_header[0]
         print(f'{file_excel}: успешно создали шапку таблицы')
 
         # если есть незаполненные поля группировки (вид номенклатуры например), ставим "не_заполнено"
         df = handle_missing_values_in_account(result_table_header[1], sign_1c)
-        print(f'{file_excel}: проверили незаполненные поля, при необходимости проставили "не заполнено"')
-
-
+        if df is not None:
+            print(f'{file_excel}: проверили незаполненные поля, при необходимости проставили "не заполнено"')
+        else:
+            print(f'{file_excel}: handle_missing_values_in_account пустой или проблемный, пропускаем его')
+            empty_files.append(f'{file_excel}')
+            continue
+        
         # разносим иерархию в горизонтальную плоскость
         # если иерархии нет, то файл пустой, пропускаем его
         result_horizontal_structure = horizontal_structure(df, file_excel, sign_1c)
         if result_horizontal_structure[0]:
-            print(f'{file_excel}: пустой, пропускаем его')
+            print(f'{file_excel}: пустой или проблемный, пропускаем его')
             empty_files.append(f'{file_excel}')
             continue
         else:
             print(f'{file_excel}: разнесли иерархию в горизонтальную плоскость')
-        df = result_horizontal_structure[1]
+            df = result_horizontal_structure[1]
+        
+        # Сдвиг столбцов, чтобы субсчета располагались в одном столбце
+        df = shiftable_level(df, True)
+        if df is None:
+            print(f'{file_excel}: handle_missing_values_in_account пустой или проблемный, пропускаем его')
+            empty_files.append(f'{file_excel}')
+            continue
         
         # формируем вспомогательную таблицу с оборотами до обработки
         # потом сравним данные с итоговой таблицей, чтобы убедиться в правильности результата
@@ -71,7 +83,7 @@ def main_process():
         print(f'{file_excel}: сформировали вспомогательную таблицу с оборотами до обработки')
         
         if df_for_check.empty:
-              print(f'{file_excel}: пустой, пропускаем его')
+              print(f'{file_excel}: пустой или проблемный, пропускаем его')
               empty_files.append(f'{file_excel}')
               continue
 
@@ -96,7 +108,7 @@ def main_process():
         result = pd.concat(list(dict_df.values()))
         print('объединили все таблицы в одну')
 
-        # Повторно сдвиг столбцов, чтобы субсчета располагались в одном столбце
+        # Сдвиг столбцов, чтобы субсчета располагались в одном столбце
         result = shiftable_level(result, file_excel)
         print('повторно сдвинули столбцы уже в сводной таблице, чтобы субсчета располагались в одном столбце')
 
@@ -108,8 +120,8 @@ def main_process():
             logger.info('\nотклонения до и после обработки менее 1')
             print('\nотклонения до и после обработки менее 1')
         else:
-            logger.error('\nобнаружены существенные отклонения до и после обработки. См "СВОД_ОТКЛ_ОСВ_счетов.xlsx"')
-            print('\nобнаружены существенные отклонения до и после обработки. См "СВОД_ОТКЛ_ОСВ_счетов.xlsx"')
+            logger.error('\nобнаружены существенные отклонения до и после обработки. См "СВОД_ОТКЛ_Обороты_счетов.xlsx"')
+            print('\nобнаружены существенные отклонения до и после обработки. См "СВОД_ОТКЛ_Обороты_счетов.xlsx"')
 
         logger.info('\nОбъединение завершено, пытаемся выгрузить файл в excel...')
         print('\nОбъединение завершено, пытаемся выгрузить файл в excel...')
@@ -118,8 +130,8 @@ def main_process():
         logger.error(f'\n\nОшибка при объединении файлов {e}')
     # выгружаем в excel
     try:
-        result.to_excel('summary_files/СВОД_ОСВ_счетов.xlsx', index=False)
-        result_check.to_excel('summary_files/СВОД_ОТКЛ_ОСВ_счетов.xlsx', index=False)
+        result.to_excel('summary_files/СВОД_Обороты_счетов.xlsx', index=False)
+        result_check.to_excel('summary_files/СВОД_ОТКЛ_Обороты_счетов.xlsx', index=False)
         logger.info('\nФайл успешно выгружен в excel')
         print('\nФайл успешно выгружен в excel')
     except Exception as e:
@@ -144,8 +156,11 @@ def main_process():
         print(f"Error: {e.filename} - {e.strerror}")
 
     if empty_files:
-        logger.info(f'Анализы счетов без оборотов ({len(empty_files)}): {empty_files}')
-        print(f'Анализы счетов без оборотов ({len(empty_files)}): {empty_files}')
+        logger.info(f'Файлы без оборотов без оборотов ({len(empty_files)}): {empty_files}')
+        print(f'Файлы без оборотов ({len(empty_files)} шт.):')
+        for i in empty_files:
+            print(f'\t-{i}')
+        print()
 
     logger.info('Скрипт завершен!!!')
     print('Скрипт завершен!!!')
