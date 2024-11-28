@@ -1,9 +1,11 @@
-from settings import exclude_values
+from config import exclude_values
+from utility_functions import catch_errors
 
+
+@catch_errors()
 def lines_delete(df, sign_1c, file_excel):  
 
     df[sign_1c] = df[sign_1c].apply(lambda x: str(x))
-    
     column_name_with_count = next((s for s in df.columns.to_list() if str(s).startswith("Показ")), None)
     
     # Определяем желаемый порядок столбцов
@@ -30,9 +32,7 @@ def lines_delete(df, sign_1c, file_excel):
     desired_order.append('Дебет_конец')
     desired_order.append('Кредит_конец')
     desired_order = [col for col in desired_order if col in df.columns]
-    
-    
-    
+
     if sign_1c == 'Субконто' and df[sign_1c].isin(['Количество']).any():
         for i in desired_order:
             df[f'Количество_{i}'] = df[i].shift(-1)
@@ -53,10 +53,8 @@ def lines_delete(df, sign_1c, file_excel):
         df = df[~((df['Уровень']==i) & (df[sign_1c] == df[f'Level_{i}']) & (i<df['Уровень'].shift(-1)))]
 
     df = df[~df[sign_1c].isin(exclude_values)].copy()
-    
     df[sign_1c] = df[sign_1c].astype(str)
-    
-    
+
     # Список необходимых столбцов
     required_columns = ['Дебет_начало', 'Кредит_начало', 'Дебет_оборот', 'Кредит_оборот', 'Дебет_конец', 'Кредит_конец']
     
@@ -67,6 +65,5 @@ def lines_delete(df, sign_1c, file_excel):
     df.rename(columns={'Счет': 'Субконто'}, inplace=True)
     df.drop('Уровень', axis=1, inplace=True)
     df['Исх.файл'] = file_excel
-    
     
     return df

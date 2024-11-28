@@ -2,47 +2,39 @@
 Обновляем наименования столбцов на корректные
 """
 
-from settings import name_account_balance_movements
-from logger import logger
-
-sign_1c_upp = 'Субконто'
-sign_1c_not_upp = 'Счет'
-# Функция для обновления элементов списка
+from config import name_account_balance_movements
+from utility_functions import catch_errors
+from config import sign_1c_upp, sign_1c_not_upp
 
 
-def table_header(df, file_excel):
-    
+
+@catch_errors()
+def table_header(df):
+
     # получаем индекс строки, содержащей target_value (значение)
     index_for_columns = 0
     for i in name_account_balance_movements:
-        nalue_dict = name_account_balance_movements[i]
-        for j in nalue_dict:
-            indices = df.index[df.apply(lambda row: j in row.values, axis=1)]
+        value_dict = name_account_balance_movements[i]
+        for _ in value_dict:
+            indices = df.index[df.apply(lambda row: _ in row.values, axis=1)]
             if not indices.empty:
                 index_for_columns = indices[0]
                 break
         
     # устанавливаем заголовки
-    df.columns = df.iloc[index_for_columns]
-    
+    df.columns = df.iloc[index_for_columns].astype(str)
     df = df.loc[:, df.columns.notna()]
-    
-    df = df.drop(df.index[0:(index_for_columns+1)]) # удаляем данные выше строки, содержащей имена столбцов таблицы (наименование отчета, период и т.д.)
-    
+    # удаляем данные выше строки, содержащей имена столбцов таблицы (наименование отчета, период и т.д.)
+    df = df.drop(df.index[0:(index_for_columns+1)])
     df.dropna(axis=0, how='all', inplace=True) # удаляем пустые строки
     df.dropna(axis=1, how='all', inplace=True)
-    
-    print(f'{file_excel} удалены пустые строки')
+
     # получим наименование первого столбца, в котором находятся наши уровни
     # переименуем этот столбец
-
     df.columns.values[0] = 'Уровень'
-
-    print(f'{file_excel} оставляем только табличные данные, переименовываем шапку таблицы')
-
     sign_1c = sign_1c_not_upp
     
-    # Находим индексы столбцов с оборотамии сальдо
+    # Находим индексы столбцов с оборотами и сальдо
     debit_turnover_index = False
     for i in name_account_balance_movements['debit_turnover']:
         try:
@@ -109,6 +101,9 @@ def table_header(df, file_excel):
                          credit_turnover_index,
                          end_debit_balance_index,
                          end_credit_balance_index]
+    if all(value is False for value in indices_to_rename):
+        return False, False
+
     new_names = ['Дебет_начало',
                  'Кредит_начало',
                  'Дебет_оборот',
@@ -118,34 +113,68 @@ def table_header(df, file_excel):
     
     # Добавляем префикс 'до' к столбцам до 'КредитОборот'
     if any(col in df.columns for col in name_account_balance_movements['debit_turnover']):
-        df.columns = [col if idx <= debit_turnover_index else f'{str(col)}_до' if debit_turnover_index < idx < credit_turnover_index else col for idx, col in enumerate(df.columns)]
+        list_do_columns = []
+        for idx, col in enumerate(df.columns):
+            if debit_turnover_index:
+                if credit_turnover_index:
+                    if credit_turnover_index > idx > debit_turnover_index:
+                        list_do_columns.append(f'{str(col)}_до')
+                    else:
+                        list_do_columns.append(col)
+                elif end_debit_balance_index:
+                    if end_debit_balance_index > idx > debit_turnover_index:
+                        list_do_columns.append(f'{str(col)}_до')
+                    else:
+                        list_do_columns.append(col)
+                elif end_credit_balance_index:
+                    if end_credit_balance_index > idx > debit_turnover_index:
+                        list_do_columns.append(f'{str(col)}_до')
+                    else:
+                        list_do_columns.append(col)
+                else:
+                    list_do_columns.append(f'{str(col)}_до')
+            else:
+                list_do_columns.append(col)
+        df.columns = list_do_columns
 
     # Добавляем префикс 'ко' к столбцам после 'КредитОборот'
     if any(col in df.columns for col in name_account_balance_movements['credit_turnover']):
-        df.columns = [col if (idx < credit_turnover_index or col in name_account_balance_movements['credit_turnover'] + name_account_balance_movements['end_debit_balance'] + name_account_balance_movements['end_credit_balance']) else f'{str(col)}_ко' for idx, col in enumerate(df.columns)]
-    
+        list_ko_columns = []
+        for idx, col in enumerate(df.columns):
+            if credit_turnover_index:
+                if end_debit_balance_index:
+                    if end_debit_balance_index > idx > credit_turnover_index:
+                        list_ko_columns.append(f'{str(col)}_ко')
+                    else:
+                        list_ko_columns.append(col)
+                elif end_credit_balance_index:
+                    if end_credit_balance_index > idx > credit_turnover_index:
+                        list_ko_columns.append(f'{str(col)}_ко')
+                    else:
+                        list_ko_columns.append(col)
+                elif idx > credit_turnover_index:
+                    list_ko_columns.append(f'{str(col)}_ко')
+                else:
+                    list_ko_columns.append(col)
+            else:
+                list_ko_columns.append(col)
+        df.columns = list_ko_columns
 
     # переименуем первые два столбца
     df.columns.values[0] = 'Уровень'
-    logger.info(f'{file_excel}: успешно обновили шапку таблицы, удалили строки выше шапки')
+    #logger.info(f'{file_excel}: успешно обновили шапку таблицы, удалили строки выше шапки')
     
     # Получаем текущие имена столбцов
     current_columns = df.columns.tolist()
     
     # Создаем словарь с новыми именами для желаемых индексов
     rename_dict = {current_columns[i]: new_names[j] for j, i in enumerate(indices_to_rename) if i}
-    
 
     # Переименовываем столбцы
     df.rename(columns=rename_dict, inplace=True)
     
-    
     # удаляем пустые строки и столбцы
     df.dropna(axis=0, how='all', inplace=True)
 
-    logger.info(f'{file_excel}: удалили пустые строки и столбцы')
-
-
-    
     return sign_1c, df
     

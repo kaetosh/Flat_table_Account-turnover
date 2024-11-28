@@ -1,7 +1,8 @@
 import pandas as pd
-from utility_functions import is_accounting_code
+from utility_functions import is_accounting_code, catch_errors
 
 
+@catch_errors()
 def shiftable_level(df, par=False):
     
     for j in range(5):
@@ -18,20 +19,18 @@ def shiftable_level(df, par=False):
                     lambda x: pd.Series([x[i] for i in new_list_lev]) if is_accounting_code(
                         x[new_list_lev[0]]) else pd.Series([x[i] for i in list_lev[lm - 1:len(new_list_lev)]]), axis=1)
                 break
+
     if par and not df['Level_0'].apply(is_accounting_code).all():
         return None
     
     # Разделяем столбцы на две группы
     level_columns = [col for col in df.columns if 'Level_' in col]
-    #other_columns = [col for col in df.columns if 'Level_' not in col]
     
     # Сортируем столбцы с Level_ по числовому значению в их названиях
     level_columns.sort(key=lambda x: int(x.split('_')[1]))
     
-    
-    # if par:
-    #     df.rename(columns={'Субконто': 'Аналитика'}, inplace=True)
-        
+    if par:
+        df.rename(columns={'Субконто': 'Аналитика'}, inplace=True)
         
     # Определяем желаемый порядок столбцов
     desired_order = [
@@ -61,7 +60,6 @@ def shiftable_level(df, par=False):
     desired_order.append('Количество_Дебет_конец')
     desired_order.append('Кредит_конец')
     desired_order.append('Количество_Кредит_конец')
-    
     
     # Отбор существующих столбцов
     existing_columns = [col for col in desired_order if col in df.columns]

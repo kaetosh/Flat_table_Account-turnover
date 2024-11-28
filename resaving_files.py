@@ -1,46 +1,57 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Aug 28 16:36:46 2024
-
-@author: a.karabedyan
-"""
-
-import os
 import win32com.client
-
+from pathlib import Path
+from tqdm import tqdm
 from logger import logger
-from settings import folder_path
+import config
+from utility_functions import terminate_script, catch_errors
 
+
+# выгрузки из 1С УПП не загружаются в openpyxl без пересохранения Excel-ем
+# пересохранение файлов
+
+@catch_errors()
 def save_as_xlsx_not_alert():
+    folder_path = Path(config.folder_path)
+    if not folder_path.is_dir():
+        terminate_script(f"Неверный путь: {folder_path}. Скрипт завершен неудачно.")
 
-    # Create a new folder for converted files
-    sNewFolderPath = os.path.join(folder_path, "ConvertedFiles")
-    if not os.path.exists(sNewFolderPath):
-        os.makedirs(sNewFolderPath)
+    sNewFolderPath = folder_path / "ConvertedFiles"
+    sNewFolderPath.mkdir(exist_ok=True)
 
-    # Iterate through all files in the selected folder
-    for oFile in os.listdir(folder_path):
-        # Check if the file is an Excel file
-        if oFile.endswith(('.xls', '.xlsx')):
-            print(oFile)
-            # Open the Excel file
-            excel = win32com.client.Dispatch('Excel.Application')
-            excel.Visible = False  # Hide Excel application
-            excel.DisplayAlerts = False  # Disable alerts
-            wb = excel.Workbooks.Open(os.path.join(folder_path, oFile))
+    excel_files_found = False
+    for oFile in folder_path.iterdir():
+        if oFile.suffix.lower() in ('.xls', '.xlsx'):
+            excel_files_found = True
+            break
 
-            # Save the file as xlsx
-            wb.SaveAs(os.path.join(sNewFolderPath, os.path.splitext(oFile)[0] + '.xlsx'), FileFormat=51)
+    if not excel_files_found:
+        sNewFolderPath.rmdir()  # Delete the empty ConvertedFiles folder
+        terminate_script("Файлы Excel не найдены. Скрипт завершен неудачно.")
 
-            # Close the workbook without saving changes
-            wb.Close(SaveChanges=False)
-            logger.info(f'Исходный файл {oFile} пересохранен.')
-            print(f'Исходный файл {oFile} пересохранен.')
+    excel_app = win32com.client.Dispatch('Excel.Application')
+    excel_app.Visible = False
+    excel_app.DisplayAlerts = False
+    files = list(folder_path.iterdir())
+    try:
+        for oFile in tqdm(files, desc="Пересохранение файлов", ncols=100):
+        #for oFile in folder_path.iterdir():
+            if oFile.suffix.lower() in ('.xls', '.xlsx'):
+                file_path = oFile.resolve()
+                if not file_path.is_file():
+                    logger.warning(f"Файл не найден: {file_path}.")
+                    continue
 
-    # Quit Excel application
-    excel.Quit()
+                wb = excel_app.Workbooks.Open(str(file_path))
+                new_file_path = sNewFolderPath / (oFile.stem + '.xlsx')
+                wb.SaveAs(str(new_file_path), FileFormat=51)
+                #logger_with_spinner(f'File {oFile.name} converted to {new_file_path.name}.')
+                wb.Close(SaveChanges=False)
+    except Exception as e:
+        sNewFolderPath.rmdir()  # Delete the ConvertedFiles folder if an error occurs
+        terminate_script(f"Ошибка обработки файла: {e}")
+    finally:
+        excel_app.Quit()
 
-    # Display a message box
-    logger.info('Исходные файлы Excel пересохранены.')
-    print('Все исходные файлы Excel пересохранены.')
-    
+    if not any(sNewFolderPath.iterdir()):
+        sNewFolderPath.rmdir()  # Delete the empty ConvertedFiles folder
+        terminate_script("Обработанные файлы не найдены. Скрипт завершен неудачно.")
