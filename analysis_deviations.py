@@ -18,6 +18,10 @@ def revolutions_before_processing(df, sign_1c):
         df_for_check[existing_columns] = df_for_check[existing_columns].astype(float)
         df_for_check.fillna(0, inplace = True)
 
+        for i in required_columns:
+            if i in existing_columns:
+                df[i] = pd.to_numeric(df[i], errors='coerce')
+
         df_for_check['Сальдо_начало_до_обработки'] = ((df_for_check['Дебет_начало'] if 'Дебет_начало' in existing_columns else 0) 
                                                       - (df_for_check['Кредит_начало'] if 'Кредит_начало' in existing_columns else 0))
         
