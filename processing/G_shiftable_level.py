@@ -17,7 +17,7 @@ def shiftable_level(df, par=False):
                 # сдвигаем:
                 df[new_list_lev] = df.apply(
                     lambda x: pd.Series([x[i] for i in new_list_lev]) if is_accounting_code(
-                        x[new_list_lev[0]]) else pd.Series([x[i] for i in list_lev[lm - 1:len(new_list_lev)]]), axis=1)
+                        x[new_list_lev[0]]) else pd.Series([x[i] for i in list_lev[lm - 1:-1]]), axis=1)
                 break
 
     if par and not df['Level_0'].apply(is_accounting_code).all():
